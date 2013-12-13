@@ -25,7 +25,7 @@ myTrader = Trader(api_key = 'my API key', logname = "mylog.txt")
 myTrader.setTrailingStopLossPercent(qty = 0.5, changeval = 10) 
 # Setup order to Buy 0.5 bitcoin at 800 dollars per coin
 myTrader.setLimitBuy(qty = 0.5, price = 800)
-# Attempt to execute all trades once per sleep time untill all trades have been executed
+# Attempt to execute all trades once per sleep time until all trades have been executed
 myTrader.trade(sleeptime = 60)
 ```
 
