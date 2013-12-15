@@ -171,17 +171,19 @@ class Trader(object):
         return traderesult
 
 
-    def trade(self, waittime = None, sleeptime = 60):
+    def trade(self, runtime = None, sleeptime = 60):
         """ 
         Returns a table of transaction results when time runs out or runs continously. Writes a log file.
-        :param time: Length of time to run for default is infinity
+
+        :param runtime: Number of seconds to trade should execute, infinity (None) is the default.
+        :param sleeptime: Interval of time between checking orders (coinbase updates their prices once per 60 seconds)
         """
 
         initialBtcBal = self.account.balance
         initialUsdVal = self.account.sell_price(initialBtcBal)
         initialSellRate = initialUsdVal/initialBtcBal if initialBtcBal != 0 else 0
         self.logwrite("Initial BTC Balance: " + str(initialBtcBal) + " Initial USD Value: " + str(initialUsdVal) + " Price Per Coin: " + str(initialSellRate)) 
-        while ( (waittime is None) or (waittime>0) ) and (len(self.orderbook) > 0):
+        while ( (runtime is None) or (runtime>0) ) and (len(self.orderbook) > 0):
 
             temporderbook = []
             sleep = True
@@ -202,7 +204,7 @@ class Trader(object):
                 elif isinstance(result, CoinOrder):
                     order.executed = True
                     temporderbook.append(result)
-                    sleep = False
+                    sleep = False           # If a coinorder is returned it should be executed asap. 
                 elif isinstance(result, CoinbaseTransfer):
                     # Trade executed
                     order.executed = True
@@ -212,7 +214,10 @@ class Trader(object):
 
             self.orderbook = temporderbook
             if sleep is True:
-                time.sleep(sleeptime)
+                if runtime is not None:
+                    runtime = runtime - sleeptime
+                if runtime is None or runtime > 0:
+                    time.sleep(sleeptime)
 
     def _addOrder(self, ordertype, qty, price = 0, changeval = None):
         """
