@@ -5,6 +5,7 @@ AUTHOR
 
 Kevin Roberts
 Github:  Kevin-Roberts
+Started on: 12-11-2013
 
 LICENSE (The MIT License)
 
@@ -105,7 +106,7 @@ class Trader(object):
         """
         Write the result and order to the log file
         """
-        logorder(order)
+        self.logorder(order)
         logstr = "Order Type: " + str(result.type) + " Code: " + str(result.code) + " Executed at: " + str(result.created_at) 
         logstr = logstr + "\nBTC Amount: " + str(result.btc_amount) + " Total Price: " + str(result.total_amount) + " Fees: " + str(result.fees_bank+result.fees_coinbase) 
         self.logwrite(logstr, "Result of Order")     
