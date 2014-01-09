@@ -36,9 +36,6 @@ Notes
 - Can call functions from coinbase_python api via Trader.account object
 - Occasionally receive "No JSON Object could be decoded" errors from Requests library. 
   TODO: try/except and retry once to see if that alleviates the problem.
-- TODO: option .trade() to run for a specified time interval before quitting
-- TODO: make .trade() optionally run in a seperate thread where .stoptrade() signals quitting
-        then you could pass orders to that thread via user input. 
 - TODO: preserve orderbook in a file and optionally reload the orderbook via an input to the python call
         this would be more useful once the threading feature above were added to save the user input
         and the other reason for this is to save the max seen value for trailing stop loss orders.

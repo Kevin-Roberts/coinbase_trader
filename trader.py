@@ -55,10 +55,14 @@ TRAIL_STOP_VALUE = "ValueTrailingStopLoss"
 TRAIL_STOP_PERCENT = "PercentageTrailingStopLoss"
 
 ORDER_ID = 0
+TRADER_ID = 0
 
 _orderIdLock = threading.Lock()
+_traderIdLock = threading.Lock()
 
 _logwriteLock = threading.Lock()
+
+_stoppedTraders = []
 
 class CoinOrder(object):
     """
@@ -84,6 +88,8 @@ class Trader(object):
     
     _orderbookLock = threading.Lock()
     _executeLock = threading.Lock()
+    _stopTradeLock = threading.Lock()
+    stopTrade = False
 
 
 
@@ -93,6 +99,10 @@ class Trader(object):
         if (api_key is not None) and (oauth2_credentials is not None):
             raise ValueError("User Provided both api_key and oauth2_credentials, select one")        # I might want to instead just use one or the other 
 
+        with _traderIdLock:
+            global TRADER_ID
+            self.traderid = TRADER_ID
+            TRADER_ID+=1 
         
         self.orderbook = [] if orderbook is None else orderbook
 
@@ -196,11 +206,20 @@ class Trader(object):
             newThread.start()
             return True
 
+        with self._stopTradeLock:
+            self.stopTrade = False
         initialBtcBal = self.account.balance
         initialUsdVal = self.account.sell_price(initialBtcBal)
         initialSellRate = initialUsdVal/initialBtcBal if initialBtcBal != 0 else 0
         self.logwrite("Initial BTC Balance: " + str(initialBtcBal) + " Initial USD Value: " + str(initialUsdVal) + " Price Per Coin: " + str(initialSellRate)) 
         while ( (runtime is None) or (runtime>0) ) and (len(self.orderbook) > 0):
+
+            with self._stopTradeLock:
+                print self.stopTrade
+                if self.traderid in _stoppedTraders:
+                    _stoppedTraders.remove(self.traderid)
+                    return True
+
             sleep = True
             temporderbook = []
             with self._orderbookLock:
@@ -241,6 +260,13 @@ class Trader(object):
                     time.sleep(sleeptime)
 
         return True
+
+    def stoptrade(self):
+        """
+        Call to stop trade() method from executing. Only needed for threading mode. 
+        """
+        with self._stopTradeLock:
+            _stoppedTraders.append(self.traderid)
 
     def _addOrder(self, ordertype, qty, price = 0, changeval = None):
         """
