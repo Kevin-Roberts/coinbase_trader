@@ -41,6 +41,7 @@ import sys
 from coinbase import CoinbaseAccount
 from coinbase.models import CoinbaseTransfer, CoinbaseError
 import oauth2client         # Maybe someone can test if I need this or not
+import threading
 from datetime import datetime
 
 import time
@@ -55,15 +56,19 @@ TRAIL_STOP_PERCENT = "PercentageTrailingStopLoss"
 
 ORDER_ID = 0
 
+_orderIdLock = threading.Lock()
+
+_logwriteLock = threading.Lock()
 
 class CoinOrder(object):
     """
     Represents DIfferent Types of Orders. Used in the order list. 
     """
     def __init__(self, ordertype, qty, price = 0, changeval = 0, parentorder = None):
-        global ORDER_ID
-        self.orderid = ORDER_ID
-        ORDER_ID+=1 
+        global ORDER_ID, _orderIdLock
+        with _orderIdLock:
+            self.orderid = ORDER_ID
+            ORDER_ID+=1 
         self.ordertype = ordertype
         self.qty = qty
         self.price = price
@@ -77,6 +82,10 @@ class CoinOrder(object):
 
 class Trader(object):
     
+    _orderbookLock = threading.Lock()
+    _executeLock = threading.Lock()
+
+
 
     def __init__(self,api_key = None, oauth2_credentials = None, orderbook = None, logname = "traderlog.txt"):
         if (api_key is None) and (oauth2_credentials is None):
@@ -100,7 +109,8 @@ class Trader(object):
         Writes to the logfile with appended newline. 
         """
         with open(self.logname, 'a') as log:
-            log.write(message + '\n')
+            with _logwriteLock:
+                log.write(message + '\n')
 
     def logexecution(self, order, result):
         """
@@ -130,82 +140,90 @@ class Trader(object):
         Returns a CoinbaseError or CoinbaseTransfer object if order attempted to execute
         Returns False if the order should be Deleted or removed from the orderbook. 
         """
-        traderesult = None
-        currentprice = -1
+        with self._executeLock:
+            traderesult = None
+            currentprice = -1
 
-        if order.ordertype in [MARKET_BUY, LIMIT_BUY]:
-            currentprice = self.account.buy_price(qty = order.qty)
-            print "Current Buy Price: " + str(currentprice/order.qty) 
-        elif order.ordertype in [MARKET_SELL, LIMIT_SELL, STOP_LOSS, TRAIL_STOP_VALUE, TRAIL_STOP_PERCENT]: 
-            currentprice = self.account.sell_price(qty = order.qty)
-            print "Current Sell Price: " + str(currentprice/order.qty)
+            if order.ordertype in [MARKET_BUY, LIMIT_BUY]:
+                currentprice = self.account.buy_price(qty = order.qty)
+                print "Current Buy Price: " + str(currentprice/order.qty) 
+            elif order.ordertype in [MARKET_SELL, LIMIT_SELL, STOP_LOSS, TRAIL_STOP_VALUE, TRAIL_STOP_PERCENT]: 
+                currentprice = self.account.sell_price(qty = order.qty)
+                print "Current Sell Price: " + str(currentprice/order.qty)
 
 
-        if order.ordertype == MARKET_BUY:
-            traderesult = self.account.buy_btc(qty = order.qty)
-        elif order.ordertype == MARKET_SELL:
-            traderesult = self.account.sell_btc(qty = order.qty)
-        elif order.ordertype == LIMIT_BUY:
-            if currentprice <= order.price:
+            if order.ordertype == MARKET_BUY:
                 traderesult = self.account.buy_btc(qty = order.qty)
-        elif order.ordertype == LIMIT_SELL:
-            if currentprice >= order.price:
-                print currentprice, order.price
+            elif order.ordertype == MARKET_SELL:
                 traderesult = self.account.sell_btc(qty = order.qty)
-        elif order.ordertype == STOP_LOSS:
-            if currentprice <= order.price:
-                traderesult = CoinOrder(ordertype = MARKET_SELL, qty = order.qty, parentorder = order)
-        elif order.ordertype == TRAIL_STOP_VALUE:
-            if currentprice > order.price:
-                order.price = currentprice
-            elif currentprice <= (order.price - order.changeval):
-                traderesult = CoinOrder(ordertype = MARKET_SELL, qty = order.qty, parentorder = order)
-        elif order.ordertype == TRAIL_STOP_PERCENT:
-            if currentprice > order.price:
-                order.price = currentprice
-            elif currentprice <= (order.price * (1.0 - order.changeval) ):
-                traderesult = CoinOrder(ordertype = MARKET_SELL, qty = order.qty, parentorder = order)
-        else:
-            print order.ordertype          # Could throw an error on CoinOrder initialize 
-            sys.exit(1)
+            elif order.ordertype == LIMIT_BUY:
+                if currentprice <= order.price:
+                    traderesult = self.account.buy_btc(qty = order.qty)
+            elif order.ordertype == LIMIT_SELL:
+                if currentprice >= order.price:
+                    traderesult = self.account.sell_btc(qty = order.qty)
+            elif order.ordertype == STOP_LOSS:
+                if currentprice <= order.price:
+                    traderesult = CoinOrder(ordertype = MARKET_SELL, qty = order.qty, parentorder = order)
+            elif order.ordertype == TRAIL_STOP_VALUE:
+                if currentprice > order.price:
+                    order.price = currentprice
+                elif currentprice <= (order.price - order.changeval):
+                    traderesult = CoinOrder(ordertype = MARKET_SELL, qty = order.qty, parentorder = order)
+            elif order.ordertype == TRAIL_STOP_PERCENT:
+                if currentprice > order.price:
+                    order.price = currentprice
+                elif currentprice <= (order.price * (1.0 - order.changeval) ):
+                    traderesult = CoinOrder(ordertype = MARKET_SELL, qty = order.qty, parentorder = order)
+            else:
+                traderesult = False         # deletes the order from the order book
 
         return traderesult
 
 
-    def trade(self, runtime = None, sleeptime = 60):
+    def trade(self, runtime = None, sleeptime = 60, startNewThread = False):
         """ 
-        Returns a table of transaction results when time runs out or runs continously. Writes a log file.
+        Call this function to execute trades in added to the order book. Returns True on success and Writes
+        the specified log file.
 
         :param runtime: Number of seconds to trade should execute, infinity (None) is the default.
         :param sleeptime: Interval of time between checking orders (coinbase updates their prices once per 60 seconds)
+        :param startNewThread: Optionally run trade in a new thread, orders can then be added while trade() runs (using the usual methods)
         """
+        if startNewThread == True:
+            newThread = threading.Thread(target=self.trade, args=[runtime, sleeptime, False])
+            newThread.daemon = True
+            newThread.start()
+            return True
 
         initialBtcBal = self.account.balance
         initialUsdVal = self.account.sell_price(initialBtcBal)
         initialSellRate = initialUsdVal/initialBtcBal if initialBtcBal != 0 else 0
         self.logwrite("Initial BTC Balance: " + str(initialBtcBal) + " Initial USD Value: " + str(initialUsdVal) + " Price Per Coin: " + str(initialSellRate)) 
         while ( (runtime is None) or (runtime>0) ) and (len(self.orderbook) > 0):
-
-            temporderbook = []
             sleep = True
+            temporderbook = []
+            with self._orderbookLock:
+                constantorderbook = self.orderbook
 
-            for order in self.orderbook:
+            for order in constantorderbook:
                 result = self.ExecuteOrder(order)
                 if result is False:
-                    # Invalid Order ID
+                    # Invalid Order ID, discard order
                     pass
                 elif isinstance(result, CoinbaseError):
-                    # THere is an error, check if its due to improper supply.
-                    print result.error
+                    # There is an error, check if its due to improper supply.
                     self.logorder(order, result.error[0])
                     if result.error[0] == "You must acknowledge that the price can vary by checking the box below.":
                         temporderbook.append(order)     # Means the order failed due to low supply and not agreeing to the price varying.
                     elif len(self.orderbook) == 1:
-                        sleep = False       # This is done to exit quickly if the only trade errors
+                        print result.error
+                        sleep = False       # This is done to exit quickly if the last trade errors
                 elif isinstance(result, CoinOrder):
                     order.executed = True
                     temporderbook.append(result)
                     sleep = False           # If a coinorder is returned it should be executed asap. 
+                    sleeptime = 1         # If I can't be executed after the first time, keep trying every second otherwise
                 elif isinstance(result, CoinbaseTransfer):
                     # Trade executed
                     order.executed = True
@@ -213,12 +231,16 @@ class Trader(object):
                 elif result is None:
                     temporderbook.append(order)
 
-            self.orderbook = temporderbook
+            with self._orderbookLock:
+                self.orderbook = temporderbook
+
             if sleep is True:
                 if runtime is not None:
                     runtime = runtime - sleeptime
                 if runtime is None or runtime > 0:
                     time.sleep(sleeptime)
+
+        return True
 
     def _addOrder(self, ordertype, qty, price = 0, changeval = None):
         """
@@ -227,7 +249,9 @@ class Trader(object):
         price = price * qty
         order = CoinOrder(ordertype = ordertype, qty = qty, price = price, changeval = changeval)
 
-        self.orderbook.append(order)
+        with self._orderbookLock:
+            self.orderbook.append(order)
+
         self.logorder(order, "Added Order:")
         return order
 
@@ -284,20 +308,25 @@ class Trader(object):
         Accepts either the orderid (starts at 0 and increments to the number of total orders)
         Or the CoinOrder object returned when the order was created.
         """
-        startlen = len(self.orderbook)
-        # Remove the items if the order id matches
         removedOrder = None
         if isinstance(orderid, int):
             temp = []
+            with self._orderbookLock:
+                constorderbook = self.orderbook
+
             for order in self.orderbook:
                 if order.id != orderid:
                     temp.append(order)
                 else:
                     removedOrder = order
-            self.orderbook = temp
+            with self._orderbookLock:
+                self.orderbook = temp
+
         if isinstance(orderid, CoinOrder):
             try:
-                self.orderbook.remove(order)
+                with self._orderbookLock:
+                    self.orderbook.remove(order)
+
                 removedOrder = order         
             except:
                 pass

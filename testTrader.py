@@ -22,6 +22,26 @@ def main():
 
 		print 'Start attempting to execute the orders with .trade'
 		myTrader.trade(sleeptime = 60)
+		# Treading version commented out below
+		####### Setup for both options #######
+		# myTrader.trade(sleeptime = 30, startNewThread = True)
+		###### Option 1, accept user input ######
+		# while 1:
+		# 	userInput = raw_input("")
+		# 	eval(userInput)		# Then type myTrader.set
+		###### Option 2, add more orders based on a trading algorithm you wrote #######
+		# ### This is mostly sudo code to give you an idea of something you could do 
+		# allmymoney = 100
+		# while 1:
+		# 	buyprice = myTrade.account.buy_price(qty = myqty)
+		# 	sellprice = myTrade.account.sell_price(qty = myqty)
+		# 	otherdata = getdata()
+		# 	getModel(testdata)
+		# 	nextHourEstimate = makePrediction(buyprice,sellprice,otherdata)
+		# 	if getGains(nextHourEstimate, buyprice, sellprice) == 0.02:
+		# 		addOrder(myTrader, nextHourEstimate, buyprice, sellprice)
+		# 	testdata.addData(buyprice, sellprice, otherdata)
+		#   time.sleep(3600)
 	else:
 		print "if thats the case I suggest you enter in values that won't execute or attempt to sell"
 		print "if you sell and don't have coins coinbase will return an error and the trade won't be executed"
