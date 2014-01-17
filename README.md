@@ -2,7 +2,7 @@ coinbase_trader
 ===============
 
 A python application to set complex Coinbase trading orders. 
-Market orders, Limits, stop losses, and trailing stop losses by percent and value.
+Market orders, Limits, stop losses, trailing stop losses by percent or value, and one starts another orders.
 Uses Coinbase API and your api_key or oauth2 credentials (https://coinbase.com/docs/api/authentication)
 to execute real trades through Coinbase. Nearly every Coinbase API function has been implemented so you can
 also send, receive, and request bitcoins or check your account information, transaction history, ect. 

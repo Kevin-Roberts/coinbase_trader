@@ -68,7 +68,15 @@ class CoinOrder(object):
     """
     Represents DIfferent Types of Orders. Used in the order list. 
     """
-    def __init__(self, ordertype, qty, price = 0, changeval = 0, parentorder = None):
+    def __init__(self, ordertype, qty, price = 0, changeval = 0, parentorder = None, nextorder = None):
+        """
+        ordertype: constant of the order type to be executed
+        qty: qty of btc in order
+        price: price of order, different uses for different order Types
+        changeval: percent of value of change before stop loss activated
+        parentorder: Order that spawned this order
+        nextorder: Order to be executed once this order is executed.  
+        """
         global ORDER_ID, _orderIdLock
         with _orderIdLock:
             self.orderid = ORDER_ID
@@ -79,6 +87,7 @@ class CoinOrder(object):
         self.changeval = changeval
         self.parentorder = parentorder
         self.executed = False
+        self.nextOrder = nextorder
 
 
 
@@ -188,6 +197,11 @@ class Trader(object):
             else:
                 traderesult = False         # deletes the order from the order book
 
+        if isinstance(order.nextOrder, CoinOrder):
+            if isinstance(traderesult, CoinbaseTransfer):
+                traderesult = (traderesult, order.nextOrder)
+            if isinstance(traderesult, CoinbaseError):
+                print "Triggered Order Lost due to error"
         return traderesult
 
 
@@ -227,6 +241,10 @@ class Trader(object):
 
             for order in constantorderbook:
                 result = self.ExecuteOrder(order)
+                if isinstance(result, tuple):
+                    # Append next order and process the trade result
+                    temporderbook.append(result[1])
+                    result = result[0]
                 if result is False:
                     # Invalid Order ID, discard order
                     pass
@@ -268,65 +286,88 @@ class Trader(object):
         with self._stopTradeLock:
             _stoppedTraders.append(self.traderid)
 
-    def _addOrder(self, ordertype, qty, price = 0, changeval = None):
+    def _addOrder(self, ordertype, qty, price = 0, changeval = None, queueExecution = True):
         """
         Generic Order Adding Function. price is in price per share. User shouldn't call.
+
+        ordertype: type of order, constant
+        qty: qty in order
+        price: price to execute 
+        changeval: change to observer for stoploss trades
+        queueExecution: True or False to add to orderbook list, True if you want to
+                          execute with trade(). False if you just want the order object to be returned
         """
         price = price * qty
         order = CoinOrder(ordertype = ordertype, qty = qty, price = price, changeval = changeval)
 
-        with self._orderbookLock:
-            self.orderbook.append(order)
+        if queueExecution is True:
+            with self._orderbookLock:
+                self.orderbook.append(order)
 
         self.logorder(order, "Added Order:")
         return order
 
-    def setMarketBuy(self, qty):
+    def setMarketBuy(self, qty, queue = True):
         """
         Buy qty bitcoins as soon as possible
         """
-        return self._addOrder(ordertype = MARKET_BUY, qty = qty)
+        return self._addOrder(ordertype = MARKET_BUY, qty = qty, queueExecution = queue)
 
 
-    def setMarketSell(self, qty):
+    def setMarketSell(self, qty, queue = True):
         """
         Sell qty bitcoins as soon as possible
         """
-        return self._addOrder(ordertype = MARKET_SELL, qty = qty)
+        return self._addOrder(ordertype = MARKET_SELL, qty = qty, queueExecution = queue)
 
 
-    def setLimitBuy(self, qty, price):
+    def setLimitBuy(self, qty, price, queue = True):
         """
         Helps buy low, Buy at specified price or lower. Input price per share
         """
-        return self._addOrder(ordertype = LIMIT_BUY,qty = qty, price = price)
+        return self._addOrder(ordertype = LIMIT_BUY,qty = qty, price = price, queueExecution = queue)
 
 
-    def setLimitSell(self, qty, price):
+    def setLimitSell(self, qty, price, queue = True):
         """
         Helps sell high, Sell at specified price or higher. Input execution price per share
         """
-        return self._addOrder(ordertype = LIMIT_SELL, qty = qty, price = price ) 
+        return self._addOrder(ordertype = LIMIT_SELL, qty = qty, price = price, queueExecution = queue) 
 
-    def setStopLoss(self, qty, price):
+    def setStopLoss(self, qty, price, queue = True):
         """
         If the price goes below a specified price, sell it all ASAP via market sell order. Input execution price per share
         """
-        return self._addOrder(ordertype = STOP_LOSS, qty = qty, price = price)
+        return self._addOrder(ordertype = STOP_LOSS, qty = qty, price = price, queueExecution = queue)
 
 
-    def setTrailStopLossValue(self, qty, changeval):
+    def setTrailStopLossValue(self, qty, changeval, queue = True):
         """
         Sell qty bitcoins when they drop "value" below their maximum per share value since purchase. Basically a Moving Limit sell at: maxPriceSeen - value
         """
-        return self._addOrder(ordertype = TRAIL_STOP_VALUE, qty = qty, price = 0, changeval = changeval*qty)
+        return self._addOrder(ordertype = TRAIL_STOP_VALUE, qty = qty, price = 0, changeval = changeval*qty, queueExecution = queue)
 
-    def setTrailStopLossPercent(self, qty, changeval, maxprice = 0):
+    def setTrailStopLossPercent(self, qty, changeval, maxprice = 0, queue = True):
         """
         Sell qty bitcoins when they have a changepercent drop below their maximum value since purchase. Basically a Moving Limit sell at: maxPriceSeen * (1 - (changepercent/100) ) 
         """
-        return self._addOrder(ordertype = TRAIL_STOP_PERCENT, qty = qty, price = maxprice, changeval = changeval/100.0)
+        return self._addOrder(ordertype = TRAIL_STOP_PERCENT, qty = qty, price = maxprice, changeval = changeval/100.0, queueExecution = queue)
 
+    def oneStartsAnother(self, initialOrder, triggerOrder, queue = True):
+        """
+        Input two orders then once ExecuteOrder() executes the order (in trade) it Returns
+        that value to the trade() method which will then begin executing the next order specified.
+        This can be used to execute a buy which upon execution will trigger a sell order at a higher price.
+        These orders could be combined multiple times by having any order trigger another oneStartsAnother order.
+        These order should NOT be added to the queue (i.e. set queue = False upon order creation).
+        """
+        initialOrder.nextOrder = triggerOrder
+        with self._orderbookLock:
+            if queue is True:
+                self.orderbook.append(initialOrder)
+
+        self.logorder(initialOrder, "Added Order:")
+        return initialOrder
 
 
     def RemoveOrder(self, orderid):
