@@ -36,7 +36,7 @@ Notes
 - Trader.trade() function can run for a specified length of time. 
 - Support has been added to easily run Trader.trade() in a seperate thread safely. Allowing you to add or remove
 orders from the orderbook easily (see testTrader.py for examples).
-- Can call functions from coinbase_python api via Trader.account object (could be dangerous in multithreaded mode without mutex?)
+- Can call functions from coinbase_python api via Trader.account object (could be dangerous in multithreaded mode without Trader._executeLock mutex)
 - Very rarely receive "No JSON Object could be decoded" errors from Requests library possibly due to internet loss
 - TODO: try/except and retry once to see if that alleviates the problem. 
 - TODO: preserve orderbook in a file and optionally reload the orderbook via an input to the python call
