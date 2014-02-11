@@ -229,7 +229,6 @@ class Trader(object):
         while ( (runtime is None) or (runtime>0) ) and (len(self.orderbook) > 0):
 
             with self._stopTradeLock:
-                print self.stopTrade
                 if self.traderid in _stoppedTraders:
                     _stoppedTraders.remove(self.traderid)
                     return True
