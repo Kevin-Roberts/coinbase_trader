@@ -138,7 +138,8 @@ class Trader(object):
         self.logorder(order)
         logstr = "Order Type: " + str(result.type) + " Code: " + str(result.code) + " Executed at: " + str(result.created_at) 
         logstr = logstr + "\nBTC Amount: " + str(result.btc_amount) + " Total Price: " + str(result.total_amount) + " Fees: " + str(result.fees_bank+result.fees_coinbase) 
-        self.logwrite(logstr, "Result of Order")     
+        logstr = "Result of Order\n" + logstr
+        self.logwrite(logstr)     
 
     def logorder(self, order, header = None):
         """
