@@ -37,15 +37,13 @@ Notes
 - Support has been added to easily run Trader.trade() in a seperate thread safely. Allowing you to add or remove
 orders from the orderbook easily (see testTrader.py for examples).
 - Can call functions from coinbase_python api via Trader.account object (could be dangerous in multithreaded mode without Trader._executeLock mutex)
-- Very rarely receive "No JSON Object could be decoded" errors from Requests library possibly due to internet loss
-- TODO: try/except and retry once to see if that alleviates the problem. 
 - TODO: preserve orderbook in a file and optionally reload the orderbook via an input to the python call
         this would be more useful once the threading feature above were added to save the user input
         and the other reason for this is to save the max seen value for trailing stop loss orders.
         The only time that max value is lost when the CoinOrder object is destroyed for any reason. 
 - TODO: Setup as module with setup.py vs just importing
-- TODO: I am contemplating adding btc-e support (through a module already created for btc-e or with the requests                library used by coinbase_python) and an algorithm that will trade on its own accord
-        for example, the program could pull in historical data and run a predictive learning classifier model
+- TODO: I am contemplating adding btc-e support (through a module already created for btc-e or with the requests                library used by coinbase_python) and an algorithm that will trade on its own accord.
+        For example, the program could pull in historical data and run a predictive learning classifier model
         to either buy or sell your coins based on historical data (possibly an SVM classifier), this would be
         a more significant update.
 
